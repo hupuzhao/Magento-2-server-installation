@@ -12,7 +12,7 @@ MAGENX_BASE="https://magenx.sh"
 ###################################################################################
 
 # Github installation repository raw url
-MAGENX_INSTALL_GITHUB_REPO="https://raw.githubusercontent.com/magenx/Magento-2-server-installation/master"
+MAGENX_INSTALL_GITHUB_REPO="https://raw.githubusercontent.com/hupuzhao/Magento-2-server-installation/master"
 
 # Magento
 VERSION_LIST=$(curl -s https://api.github.com/repos/magento/magento2/tags 2>&1 | grep -oP '(?<=name": ").*(?=")' | sort -r)
@@ -36,8 +36,8 @@ MARIADB_REPO_CONFIG="https://downloads.mariadb.com/MariaDB/mariadb_repo_setup"
 
 # Nginx configuration
 NGINX_VERSION=$(curl -s http://nginx.org/en/download.html | grep -oP '(?<=gz">nginx-).*?(?=</a>)' | head -1)
-MAGENX_NGINX_GITHUB_REPO="https://raw.githubusercontent.com/magenx/Magento-nginx-config/master/"
-MAGENX_NGINX_GITHUB_REPO_API="https://api.github.com/repos/magenx/Magento-nginx-config/contents/magento2"
+MAGENX_NGINX_GITHUB_REPO="https://raw.githubusercontent.com/hupuzhao/Magento-nginx-config/master/"
+MAGENX_NGINX_GITHUB_REPO_API="https://api.github.com/repos/hupuzhao/Magento-nginx-config/contents/magento2"
 
 # Debug Tools
 MYSQL_TUNER="https://raw.githubusercontent.com/major/MySQLTuner-perl/master/mysqltuner.pl"
@@ -578,7 +578,7 @@ if [ "${mariadb_install}" == "y" ]; then
      echo "127.0.0.1 mariadb" >> /etc/hosts
      echo
      WHITETXT "Downloading my.cnf file from MagenX Github repository"
-     curl -sSo /etc/my.cnf https://raw.githubusercontent.com/magenx/magento-mysql/master/my.cnf/my.cnf
+     curl -sSo /etc/my.cnf https://raw.githubusercontent.com/hupuzhao/magento-mysql/master/my.cnf/my.cnf
      echo
      WHITETXT "[?] Calculating [innodb_buffer_pool_size]:"
      INNODB_BUFFER_POOL_SIZE=$(echo "0.5*$(awk '/MemTotal/ { print $2 / (1024*1024)}' /proc/meminfo | cut -d'.' -f1)" | bc | xargs printf "%1.0f")
