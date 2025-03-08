@@ -308,34 +308,6 @@ fi
 # install packages to run CPU and HDD test
 dpkg-query -l curl time bc bzip2 tar >/dev/null || { echo; echo; apt update -o Acquire::ForceIPv4=true; apt -y install curl time bc bzip2 tar; }
 
-# check if you need self update
-MD5_NEW=$(curl -sL ${MAGENX_BASE} > ${SELF}.new && md5sum ${SELF}.new | awk '{print $1}')
-MD5=$(md5sum ${SELF} | awk '{print $1}')
- if [[ "${MD5_NEW}" == "${MD5}" ]]; then
-   GREENTXT "PASS: INTEGRITY CHECK FOR '${SELF}' OK"
-   rm ${SELF}.new
-  elif [[ "${MD5_NEW}" != "${MD5}" ]]; then
-   echo ""
-   YELLOWTXT "Integrity check for '${SELF}'"
-   YELLOWTXT "detected different md5 checksum"
-   YELLOWTXT "remote repository file has some changes"
-   echo ""
-   REDTXT "IF YOU HAVE LOCAL CHANGES REMOVE INTEGRITY CHECK OR SKIP UPDATES"
-   echo ""
-   _echo "[?] Would you like to update the file now?  [y/n][y]: "
-   read update_agree
-  if [ "${update_agree}" == "y" ];then
-   mv ${SELF}.new ${SELF}
-   echo ""
-   GREENTXT "The file has been upgraded, please run it again"
-   echo ""
-  exit 1
-  else
-   echo ""
-   YELLOWTXT "New file saved to ${SELF}.new"
-   echo
-  fi
-fi
 
 # check if memory is enough
 TOTALMEM=$(awk '/MemTotal/{print $2}' /proc/meminfo | xargs -I {} echo "scale=4; {}/1024^2" | bc | xargs printf "%1.0f")
@@ -414,62 +386,6 @@ if [ -z "${SYSTEM_TEST}" ]; then
  echo
 fi
 echo
-
-# ssh port test
-SSH_PORT=$(${SQLITE3} "SELECT ssh_port FROM system;")
-if [ -z "${SSH_PORT}" ]; then
- echo
- sed -i "s/.*LoginGraceTime.*/LoginGraceTime 30/" /etc/ssh/sshd_config
- sed -i "s/.*MaxAuthTries.*/MaxAuthTries 6/" /etc/ssh/sshd_config     
- sed -i "s/.*X11Forwarding.*/X11Forwarding no/" /etc/ssh/sshd_config
- sed -i "s/.*PrintLastLog.*/PrintLastLog yes/" /etc/ssh/sshd_config
- sed -i "s/.*TCPKeepAlive.*/TCPKeepAlive yes/" /etc/ssh/sshd_config
- sed -i "s/.*ClientAliveInterval.*/ClientAliveInterval 600/" /etc/ssh/sshd_config
- sed -i "s/.*ClientAliveCountMax.*/ClientAliveCountMax 3/" /etc/ssh/sshd_config
- sed -i "s/.*UseDNS.*/UseDNS no/" /etc/ssh/sshd_config
- sed -i "s/.*PrintMotd.*/PrintMotd no/" /etc/ssh/sshd_config
- echo
- SSH_PORT="$(awk '/#?Port [0-9]/ {print $2}' /etc/ssh/sshd_config)"
-  if [ "${SSH_PORT}" == "22" ]; then
-    REDTXT "[!] Default ssh port :22 detected"
-    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.BACK
-    SSH_PORT_NEW=$(shuf -i 9537-9554 -n 1)
-    sed -i "s/.*Port 22/Port ${SSH_PORT_NEW}/g" /etc/ssh/sshd_config
-    SSH_PORT=${SSH_PORT_NEW}
-  fi
-  echo
-  GREENTXT "SSH port and settings were updated  -  OK"
-  echo
-  GREENTXT "[!] SSH Port: ${SSH_PORT}"
-  echo
-  systemctl restart sshd.service
-  ss -tlp | grep sshd
-  echo
-echo
-REDTXT "[!] IMPORTANT: Now open new SSH session with the new port!"
-REDTXT "[!] IMPORTANT: Do not close your current session!"
-echo
-_echo "[?] Have you logged in another session? [y/n][n]: "
-read ssh_test
-if [ "${ssh_test}" == "y" ]; then
-  echo
-   GREENTXT "[!] SSH Port: ${SSH_PORT}"
-   echo
-   ${SQLITE3} "UPDATE system SET ssh_port = '${SSH_PORT}';"
-   echo
-   echo
-   pause "[] Press [Enter] key to proceed"
-  else
-   echo
-   mv /etc/ssh/sshd_config.BACK /etc/ssh/sshd_config
-   REDTXT "Restoring sshd_config file back to defaults ${GREEN} [ok]"
-   systemctl restart sshd.service
-   echo
-   GREENTXT "SSH port has been restored  -  OK"
-   ss -tlp | grep sshd
-  fi
-fi
-
 # Lets set magento mode/environment type to configure
 ENV=($(${SQLITE3} "SELECT DISTINCT env FROM magento;"))
 if [ ${#ENV[@]} -eq 0 ]; then
@@ -954,8 +870,59 @@ echo
 _echo "${YELLOW}[?] Install RabbitMQ ${RABBITMQ_VERSION} ? [y/n][n]:${RESET} "
 read rabbitmq_install
 if [ "${rabbitmq_install}" == "y" ];then
-  curl -1sLf 'https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-server/setup.deb.sh' | bash
-  curl -1sLf 'https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-erlang/setup.deb.sh' | bash
+  curl -1sLf "https://keys.openpgp.org/vks/v1/by-fingerprint/0A9AF2115F4687BD29803A206B73A36E6026DFCA" | sudo gpg --dearmor | sudo tee /usr/share/keyrings/com.rabbitmq.team.gpg > /dev/null
+  ## Community mirror of Cloudsmith: modern Erlang repository
+  curl -1sLf https://github.com/rabbitmq/signing-keys/releases/download/3.0/cloudsmith.rabbitmq-erlang.E495BB49CC4BBE5B.key | sudo gpg --dearmor | sudo tee /usr/share/keyrings/rabbitmq.E495BB49CC4BBE5B.gpg > /dev/null
+  ## Community mirror of Cloudsmith: RabbitMQ repository
+  curl -1sLf https://github.com/rabbitmq/signing-keys/releases/download/3.0/cloudsmith.rabbitmq-server.9F4587F226208342.key | sudo gpg --dearmor | sudo tee /usr/share/keyrings/rabbitmq.9F4587F226208342.gpg > /dev/null
+
+  ## Add apt repositories maintained by Team RabbitMQ
+  sudo tee /etc/apt/sources.list.d/rabbitmq.list <<EOF
+  ## Provides modern Erlang/OTP releases
+  ##
+  deb [arch=amd64 signed-by=/usr/share/keyrings/rabbitmq.E495BB49CC4BBE5B.gpg] https://ppa1.rabbitmq.com/rabbitmq/rabbitmq-erlang/deb/ubuntu jammy main
+  deb-src [signed-by=/usr/share/keyrings/rabbitmq.E495BB49CC4BBE5B.gpg] https://ppa1.rabbitmq.com/rabbitmq/rabbitmq-erlang/deb/ubuntu jammy main
+
+  # another mirror for redundancy
+  deb [arch=amd64 signed-by=/usr/share/keyrings/rabbitmq.E495BB49CC4BBE5B.gpg] https://ppa2.rabbitmq.com/rabbitmq/rabbitmq-erlang/deb/ubuntu jammy main
+  deb-src [signed-by=/usr/share/keyrings/rabbitmq.E495BB49CC4BBE5B.gpg] https://ppa2.rabbitmq.com/rabbitmq/rabbitmq-erlang/deb/ubuntu jammy main
+
+  ## Provides RabbitMQ
+  ##
+  deb [arch=amd64 signed-by=/usr/share/keyrings/rabbitmq.9F4587F226208342.gpg] https://ppa1.rabbitmq.com/rabbitmq/rabbitmq-server/deb/ubuntu jammy main
+  deb-src [signed-by=/usr/share/keyrings/rabbitmq.9F4587F226208342.gpg] https://ppa1.rabbitmq.com/rabbitmq/rabbitmq-server/deb/ubuntu jammy main
+
+  # another mirror for redundancy
+  deb [arch=amd64 signed-by=/usr/share/keyrings/rabbitmq.9F4587F226208342.gpg] https://ppa2.rabbitmq.com/rabbitmq/rabbitmq-server/deb/ubuntu jammy main
+  deb-src [signed-by=/usr/share/keyrings/rabbitmq.9F4587F226208342.gpg] https://ppa2.rabbitmq.com/rabbitmq/rabbitmq-server/deb/ubuntu jammy main
+EOF
+
+  ## Update package indices
+  apt update -y
+
+  ## Install Erlang packages
+  ##
+  ## For versions not compatible with the latest available Erlang series, which is the case
+  ## for 3.13.x, apt must be instructed to install specifically Erlang 26.
+  ## Alternatively this can be done via version pinning, documented further in this guide.
+  supported_erlang_version="1:26.2.5.6-1"
+  apt install -y erlang-base=$supported_erlang_version \
+                          erlang-asn1=$supported_erlang_version \
+                          erlang-crypto=$supported_erlang_version \
+                          erlang-eldap=$supported_erlang_version \
+                          erlang-ftp=$supported_erlang_version \
+                          erlang-inets=$supported_erlang_version \
+                          erlang-mnesia=$supported_erlang_version \
+                          erlang-os-mon=$supported_erlang_version \
+                          erlang-parsetools=$supported_erlang_version \
+                          erlang-public-key=$supported_erlang_version \
+                          erlang-runtime-tools=$supported_erlang_version \
+                          erlang-snmp=$supported_erlang_version \
+                          erlang-ssl=$supported_erlang_version \
+                          erlang-syntax-tools=$supported_erlang_version \
+                          erlang-tftp=$supported_erlang_version \
+                          erlang-tools=$supported_erlang_version \
+                          erlang-xmerl=$supported_erlang_version
   if [ "$?" = 0 ]; then
     echo
     GREENTXT "RabbitMQ repository installed - OK"
@@ -963,7 +930,7 @@ if [ "${rabbitmq_install}" == "y" ];then
     YELLOWTXT "RabbitMQ ${RABBITMQ_VERSION} installation:"
     echo ""
     apt update
-    apt -y install rabbitmq-server=${RABBITMQ_VERSION} 
+    apt -y install rabbitmq-server=${RABBITMQ_VERSION} --fix-missing
     if [ "$?" = 0 ]; then
      echo ""
      GREENTXT "RabbitMQ ${RABBITMQ_VERSION} installed  -  OK"
@@ -1644,7 +1611,6 @@ if [[ ${RESULT} == up ]]; then
 fi
 
 # Get variables for configuration
-SSH_PORT="$(${SQLITE3} "SELECT ssh_port FROM system;")"
 PHP_VERSION="$(${SQLITE3} "SELECT php_version FROM system;")"
 TIMEZONE="$(${SQLITE3} "SELECT timezone FROM system;")"
 
